@@ -1,0 +1,46 @@
+# ==========================================
+# CreatorRAG - Global Git Ignore
+# ==========================================
+
+# 1. Dependency Directories
+node_modules/
+frontend/node_modules/
+backend/venv/
+venv/
+env/
+.venv/
+
+# 2. Local Environment Credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+
+# 3. Python Cache & Virtual Environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+backend/__pycache__/
+backend/*.pyc
+
+# 4. OS/IDE Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# 5. Local Database Files / Logs
+*.log
+backend/chroma_db/
+chroma_db/
+temp_audio.*
+backend/temp_audio.*
