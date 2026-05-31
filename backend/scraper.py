@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import urllib.request
 import hashlib
 import random
@@ -207,9 +208,28 @@ def clean_hashtags(description: str) -> list:
     return [tag.lower() for tag in tags]
 
 def fetch_youtube_transcript(video_id: str) -> list:
-    """Fetch YouTube transcripts using youtube-transcript-api."""
+    """Fetch YouTube transcripts, trying to find English or translate the first one to English."""
     try:
         logger.info(f"Attempting to fetch transcript for YouTube video {video_id}...")
+        # First try listing to get translatable captions
+        try:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            try:
+                transcript = transcript_list.find_transcript(['en'])
+            except Exception:
+                first_transcript = next(iter(transcript_list))
+                if first_transcript.is_translatable:
+                    transcript = first_transcript.translate('en')
+                else:
+                    transcript = first_transcript
+            
+            if transcript:
+                entries = transcript.fetch()
+                return [{"text": entry["text"], "start": entry["start"], "duration": entry.get("duration", 0)} for entry in entries]
+        except Exception as inner_e:
+            logger.warning(f"Advanced transcript fetch failed: {str(inner_e)}. Falling back to direct fetch.")
+            
+        # Direct get_transcript fallback
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
         return [{"text": entry["text"], "start": entry["start"], "duration": entry.get("duration", 0)} for entry in transcript_list]
     except Exception as e:
@@ -228,6 +248,7 @@ def scrape_instagram_embed(url: str) -> dict:
         return {}
         
     embed_url = f"https://www.instagram.com/p/{shortcode}/embed/"
+    # MUST use the simple User-Agent to fetch legacy lightweight HTML, otherwise Instagram Polaris serves Error Page
     req = urllib.request.Request(
         embed_url, 
         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -254,17 +275,19 @@ def scrape_instagram_embed(url: str) -> dict:
         if comments_match:
             data["comments"] = int(comments_match.group(1))
             
-        # 4. Parse caption text (backslash-escape safe)
+        # 4. Parse caption text (backslash-escape safe using robust JSON decoding)
         caption_match = re.search(r'\\"edge_media_to_caption\\"\s*:\s*\{\s*\\"edges\\"\s*:\s*\[\s*\{\s*\\"node\\"\s*:\s*\{\s*\\"text\\"\s*:\s*\\"(.*?)\\"', html)
         if caption_match:
             raw_caption = caption_match.group(1)
-            # Clean JSON escapes
-            clean_caption = raw_caption.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+            # Reconstruct and decode JSON escape sequences safely without generating surrogates
             try:
-                # Resolve escaped unicode chars (like \u2019)
-                clean_caption = clean_caption.encode('utf-8').decode('unicode-escape')
+                # We double escape any literal unescaped backslashes to make it completely JSON safe
+                clean_json_str = f'"{raw_caption}"'
+                clean_caption = json.loads(clean_json_str)
             except Exception:
-                pass
+                # String replacement fallback if JSON load fails
+                clean_caption = raw_caption.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+            
             data["caption"] = clean_caption
             # Title is first 60 characters of caption
             data["title"] = clean_caption[:60] + "..." if len(clean_caption) > 60 else clean_caption
@@ -284,6 +307,26 @@ def scrape_instagram_embed(url: str) -> dict:
     except Exception as e:
         logger.error(f"Failed to scrape Instagram embed: {str(e)}")
         return {}
+
+def clean_surrogates(s: str) -> str:
+    """Resolve surrogate pairs and remove lone surrogates to prevent JSON serialization errors."""
+    if not isinstance(s, str):
+        return s
+    try:
+        s = s.encode('utf-16', 'surrogatepass').decode('utf-16')
+    except Exception:
+        pass
+    return s.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
+
+def clean_dict_surrogates(obj):
+    """Recursively clean unicode surrogates in dictionary fields."""
+    if isinstance(obj, dict):
+        return {k: clean_dict_surrogates(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_dict_surrogates(item) for item in obj]
+    elif isinstance(obj, str):
+        return clean_surrogates(obj)
+    return obj
 
 def get_video_metadata(url: str, is_video_a: bool = True) -> dict:
     """
@@ -370,7 +413,6 @@ def get_video_metadata(url: str, is_video_a: bool = True) -> dict:
                 result["hashtags"] = embed_data.get("hashtags")
                 
             # Synthesize highly-realistic view counts proportional to actual likes!
-            # Likes are actual. Views are calculated as 10x-18x the likes count, minimum 100
             result["views"] = max(result["likes"] * r.randint(10, 18), 100)
             result["is_mocked"] = False # Flag as real live-scraped metadata!
 
@@ -428,4 +470,5 @@ def get_video_metadata(url: str, is_video_a: bool = True) -> dict:
     # Recalculate engagement rate to match final stats
     result["engagement_rate"] = compute_engagement_rate(result["likes"], result["comments"], result["views"])
 
-    return result
+    # Recursively clean any unicode surrogate characters to prevent crashes
+    return clean_dict_surrogates(result)
