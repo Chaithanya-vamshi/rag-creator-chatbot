@@ -11,6 +11,13 @@ from youtube_transcript_api import YouTubeTranscriptApi
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ydl_opts = {
+    'quiet': True,
+    'no_warnings': True,
+    'extract_flat': False,
+    'skip_download': True,
+}
+
 # Dynamic Ingestion Templates to generate unique outputs for different URLs
 INSTAGRAM_TEMPLATES = [
     {

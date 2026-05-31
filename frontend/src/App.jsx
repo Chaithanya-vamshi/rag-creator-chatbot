@@ -25,6 +25,11 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  // Dynamic API base path (Localhost vs Vercel Monorepo routing)
+  const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000'
+    : '/_/backend';
+
   // Video URLs
   const [urlA, setUrlA] = useState('https://www.youtube.com/watch?v=WhyStartupsFail');
   const [urlB, setUrlB] = useState('https://www.instagram.com/reel/FounderMorningRoutine');
@@ -85,7 +90,7 @@ export default function App() {
     setCitations([]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/analyze', {
+      const response = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url_a: urlA, url_b: urlB }),
@@ -133,7 +138,7 @@ Click any of the quick suggestion chips below or ask me a question in the chat p
     setCitations([]); // Reset current query citations
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
